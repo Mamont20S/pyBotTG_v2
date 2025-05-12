@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Домашние задания</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        button { background: #0088cc; color: white; border: none; padding: 10px; border-radius: 5px; margin: 5px; }
+        .calendar { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+        .day { padding: 10px; text-align: center; border: 1px solid #ddd; cursor: pointer; }
+        .day:hover { background: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <h1>📚 Домашние задания</h1>
+    <button id="record-btn">📝 Записать ДЗ</button>
+    <button id="view-btn">🔍 Посмотреть ДЗ</button>
+
+    <!-- Календарь (появится при нажатии кнопок) -->
+    <div id="calendar" style="display: none;">
+        <h2 id="calendar-title"></h2>
+        <div class="calendar" id="calendar-days"></div>
+    </div>
+
+    <!-- Выбор предмета (появится после выбора даты) -->
+    <div id="subject-select" style="display: none;">
+        <h2 id="subject-title"></h2>
+        <div id="subject-buttons"></div>
+    </div>
+
+    <!-- Ввод ДЗ (появится после выбора предмета) -->
+    <div id="hw-input" style="display: none;">
+        <h2 id="hw-title"></h2>
+        <textarea id="hw-text" rows="5" style="width: 100%;"></textarea>
+        <button id="hw-save">Сохранить</button>
+    </div>
+
+    <!-- Просмотр ДЗ (появится после выбора даты) -->
+    <div id="hw-view" style="display: none;">
+        <h2 id="view-title"></h2>
+        <ul id="hw-list"></ul>
+    </div>
+
+    <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Раскрыть на весь экран
+
+        // Элементы интерфейса
+        const recordBtn = document.getElementById("record-btn");
+        const viewBtn = document.getElementById("view-btn");
+        const calendarDiv = document.getElementById("calendar");
+        const subjectSelectDiv = document.getElementById("subject-select");
+        const hwInputDiv = document.getElementById("hw-input");
+        const hwViewDiv = document.getElementById("hw-view");
+
+        let currentMode = ""; // "record" или "view"
+        let selectedDate = null;
+        let selectedSubject = "";
+
+        // Запрос к бэкенду
+        async function fetchAPI(endpoint, method = "GET", body = null) {
+            const response = await fetch(`http://ваш-бэкенд:8000${endpoint}`, {
+                method,
+                headers: { "Content-Type": "application/json" },
+                body: body ? JSON.stringify(body) : null
+            });
+            return await response.json();
+        }
+
+        // Показать календарь
+        function showCalendar(mode) {
+            currentMode = mode;
+            calendarDiv.style.display = "block";
+            subjectSelectDiv.style.display = "none";
+            hwInputDiv.style.display = "none";
+            hwViewDiv.style.display = "none";
+
+            const today = new Date();
+            renderCalendar(today.getFullYear(), today.getMonth());
+        }
+
+        // Отрисовка календаря (упрощенная версия)
+        function renderCalendar(year, month) {
+            const calendarDays = document.getElementById("calendar-days");
+            calendarDays.innerHTML = "";
+
+            const firstDay = new Date(year, month, 1);
+            const lastDay = new Date(year, month + 1, 0);
+
+            document.getElementById("calendar-title").textContent = 
+                `${firstDay.toLocaleString('default', { month: 'long' })} ${year}`;
+
+            for (let day = 1; day <= lastDay.getDate(); day++) {
+                const dayElement = document.createElement("div");
+                dayElement.className = "day";
+                dayElement.textContent = day;
+                dayElement.onclick = () => selectDate(new Date(year, month, day));
+                calendarDays.appendChild(dayElement);
+            }
+        }
+
+        // Выбор даты
+        async function selectDate(date) {
+            selectedDate = date;
+            const dayNum = date.getDay(); // 0-6 (вс-сб)
+
+            if (currentMode === "record") {
+                if (dayNum >= 1 && dayNum <= 5) { // Пн-Пт
+                    const subjects = await fetchAPI(`/subjects/${dayNum}`);
+                    showSubjectSelection(dayNum, date, subjects.subjects);
+                } else {
+                    alert("Выходной день!");
+                }
+            } else {
+                const homeworks = await fetchAPI(`/get_homework/${date.toISOString().split('T')[0]}`);
+                showHomeworkList(date, homeworks.homeworks);
+            }
+        }
+
+        // Показать выбор предмета
+        function showSubjectSelection(dayNum, date, subjects) {
+            calendarDiv.style.display = "none";
+            subjectSelectDiv.style.display = "block";
+
+            document.getElementById("subject-title").textContent = 
+                `Выберите предмет (${date.toLocaleDateString()})`;
+
+            const subjectButtons = document.getElementById("subject-buttons");
+            subjectButtons.innerHTML = "";
+
+            subjects.forEach(subject => {
+                const btn = document.createElement("button");
+                btn.textContent = subject;
+                btn.onclick = () => selectSubject(subject, date);
+                subjectButtons.appendChild(btn);
+            });
+        }
+
+        // Выбор предмета
+        function selectSubject(subject, date) {
+            selectedSubject = subject;
+            subjectSelectDiv.style.display = "none";
+            hwInputDiv.style.display = "block";
+
+            document.getElementById("hw-title").textContent = 
+                `ДЗ по ${subject} на ${date.toLocaleDateString()}`;
+        }
+
+        // Сохранение ДЗ
+        document.getElementById("hw-save").onclick = async function() {
+            const hwText = document.getElementById("hw-text").value;
+            await fetchAPI("/save_homework", "POST", {
+                subject: selectedSubject,
+                date: selectedDate.toISOString().split('T')[0],
+                text: hwText
+            });
+            alert("ДЗ сохранено!");
+            hwInputDiv.style.display = "none";
+        };
+
+        // Показать список ДЗ
+        function showHomeworkList(date, homeworks) {
+            calendarDiv.style.display = "none";
+            hwViewDiv.style.display = "block";
+
+            document.getElementById("view-title").textContent = 
+                `ДЗ на ${date.toLocaleDateString()}`;
+
+            const hwList = document.getElementById("hw-list");
+            hwList.innerHTML = "";
+
+            if (homeworks.length === 0) {
+                hwList.innerHTML = "<li>Нет ДЗ на эту дату</li>";
+            } else {
+                homeworks.forEach(hw => {
+                    const li = document.createElement("li");
+                    li.textContent = hw;
+                    hwList.appendChild(li);
+                });
+            }
+        }
+
+        // Обработчики кнопок
+        recordBtn.onclick = () => showCalendar("record");
+        viewBtn.onclick = () => showCalendar("view");
+    </script>
+</body>
+</html>
