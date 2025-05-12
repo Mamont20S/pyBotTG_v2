@@ -81,62 +81,94 @@
             renderCalendar(today.getFullYear(), today.getMonth());
         }
 
-        // Отрисовка календаря (упрощенная версия)
-        function renderCalendar(year, month) {
-            const calendarDays = document.getElementById("calendar-days");
-            calendarDays.innerHTML = "";
+        // Обновленная функция renderCalendar
+function renderCalendar(year, month) {
+    const calendarDays = document.getElementById("calendar-days");
+    calendarDays.innerHTML = "";
 
-            const firstDay = new Date(year, month, 1);
-            const lastDay = new Date(year, month + 1, 0);
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const monthNames = ["Январь", "Февраль", "Март", "Апрель", "Май", "Июнь",
+                       "Июль", "Август", "Сентябрь", "Октябрь", "Ноябрь", "Декабрь"];
 
-            document.getElementById("calendar-title").textContent = 
-                `${firstDay.toLocaleString('default', { month: 'long' })} ${year}`;
+    document.getElementById("calendar-title").textContent = 
+        `${monthNames[month]} ${year}`;
 
-            for (let day = 1; day <= lastDay.getDate(); day++) {
-                const dayElement = document.createElement("div");
-                dayElement.className = "day";
-                dayElement.textContent = day;
-                dayElement.onclick = () => selectDate(new Date(year, month, day));
-                calendarDays.appendChild(dayElement);
-            }
-        }
+    // Добавляем пустые ячейки для первого дня
+    for (let i = 0; i < firstDay.getDay(); i++) {
+        const empty = document.createElement("div");
+        empty.className = "day empty";
+        calendarDays.appendChild(empty);
+    }
 
-        // Выбор даты
-        async function selectDate(date) {
-            selectedDate = date;
-            const dayNum = date.getDay(); // 0-6 (вс-сб)
+    // Добавляем дни месяца
+    for (let day = 1; day <= lastDay.getDate(); day++) {
+        const dayElement = document.createElement("div");
+        dayElement.className = "day";
+        dayElement.textContent = day;
+        
+        // Используем addEventListener вместо onclick
+        dayElement.addEventListener("click", () => {
+            dayElement.style.backgroundColor = "#0088cc";
+            dayElement.style.color = "white";
+            handleDateSelect(new Date(year, month, day));
+        });
+        
+        calendarDays.appendChild(dayElement);
+    }
+}
 
-            if (currentMode === "record") {
-                if (dayNum >= 1 && dayNum <= 5) { // Пн-Пт
-                    const subjects = await fetchAPI(`/subjects/${dayNum}`);
-                    showSubjectSelection(dayNum, date, subjects.subjects);
-                } else {
-                    alert("Выходной день!");
-                }
+        // Вместо selectDate используем эту улучшенную версию
+async function handleDateSelect(date) {
+    try {
+        selectedDate = date;
+        const dayNum = date.getDay() || 7; // Преобразуем вс (0) в 7
+        
+        if (currentMode === "record") {
+            if (dayNum >= 1 && dayNum <= 5) { // Пн-Пт
+                const response = await fetchAPI(`/subjects/${dayNum}`);
+                if (!response.subjects) throw new Error("Нет данных о предметах");
+                showSubjectSelection(date, response.subjects);
             } else {
-                const homeworks = await fetchAPI(`/get_homework/${date.toISOString().split('T')[0]}`);
-                showHomeworkList(date, homeworks.homeworks);
+                tg.showAlert("Выходной день - ДЗ нет!");
             }
+        } else {
+            const response = await fetchAPI(`/get_homework/${date.toISOString().split('T')[0]}`);
+            showHomeworkList(date, response.homeworks || []);
         }
+    } catch (error) {
+        console.error("Ошибка:", error);
+        tg.showAlert("Произошла ошибка: " + error.message);
+    }
+}
 
-        // Показать выбор предмета
-        function showSubjectSelection(dayNum, date, subjects) {
-            calendarDiv.style.display = "none";
-            subjectSelectDiv.style.display = "block";
+        // Обновленная функция showSubjectSelection
+function showSubjectSelection(date, subjects) {
+    calendarDiv.style.display = "none";
+    subjectSelectDiv.style.display = "block";
+    hwInputDiv.style.display = "none";
+    hwViewDiv.style.display = "none";
 
-            document.getElementById("subject-title").textContent = 
-                `Выберите предмет (${date.toLocaleDateString()})`;
+    document.getElementById("subject-title").textContent = 
+        `Выберите предмет на ${date.toLocaleDateString('ru-RU')}`;
 
-            const subjectButtons = document.getElementById("subject-buttons");
-            subjectButtons.innerHTML = "";
+    const subjectButtons = document.getElementById("subject-buttons");
+    subjectButtons.innerHTML = "";
 
-            subjects.forEach(subject => {
-                const btn = document.createElement("button");
-                btn.textContent = subject;
-                btn.onclick = () => selectSubject(subject, date);
-                subjectButtons.appendChild(btn);
-            });
-        }
+    subjects.forEach(subject => {
+        const btn = document.createElement("button");
+        btn.textContent = subject;
+        btn.addEventListener("click", () => {
+            selectedSubject = subject;
+            subjectSelectDiv.style.display = "none";
+            hwInputDiv.style.display = "block";
+            document.getElementById("hw-title").textContent = 
+                `Введите ДЗ по ${subject} на ${date.toLocaleDateString('ru-RU')}`;
+            document.getElementById("hw-text").value = "";
+        });
+        subjectButtons.appendChild(btn);
+    });
+}
 
         // Выбор предмета
         function selectSubject(subject, date) {
